@@ -5,12 +5,14 @@ import io
 import git
 import os
 
+st.title('Trabalho Prático 2')
+st.write('Introdução a Banco de Dados')
+st.write('Departamento de Ciência da Computação')
+st.write('Universidade Federal de Minas Gerais')
+
 # Função para clonar o repositório Git e carregar os dados
 def clonar_e_carregar():
-    # Caminho do diretório onde o repositório será clonado
     repo_path = './Data_IBD'
-    
-    # URL do repositório Git
     repo_url = 'https://github.com/souza-marcos/Data_IBD.git'
 
     # Clonar o repositório se ele ainda não existir
@@ -39,18 +41,6 @@ st.image('modeloer.png', caption='Diagrama ER', use_column_width=True)
 
 # Carrega e exibe o diagrama relacional
 st.image('relacional.jpeg', caption='Diagrama Relacional', use_column_width=True)
-
-# Função para carregar e mostrar a imagem do Diagrama ER
-def mostrar_diagrama_er():
-    image_er = st.file_uploader("Carregar Diagrama ER", type=["png", "jpg", "jpeg"])
-    if image_er is not None:
-        st.image(image_er, caption='Diagrama ER')
-
-# Função para carregar e mostrar a imagem do Diagrama Relacional
-def mostrar_diagrama_relacional():
-    image_relacional = st.file_uploader("Carregar Diagrama Relacional", type=["png", "jpg", "jpeg"])
-    if image_relacional is not None:
-        st.image(image_relacional, caption='Diagrama Relacional')
 
 # Estabelece a conexão com o banco de dados
 conn = sqlite3.connect('database.db')
@@ -263,3 +253,15 @@ if st.button('Executar Consulta Personalizada'):
 # Fechar a conexão com o banco de dados
 conn.close()
 
+
+st.markdown('---')  # Adiciona uma linha horizontal para separar o conteúdo
+st.markdown("""
+#### Grupo:
+- Gustavo Chaves Ferreira
+- Júlio Guerra Domingues
+- Manuel Junio Ferraz Cardoso
+- Marcos Daniel Souza Netto
+
+#### Professor:
+- Rodrygo Luis Teodoro Santos
+""", unsafe_allow_html=True)
