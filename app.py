@@ -6,41 +6,41 @@ import git
 import os
 
 st.title('Trabalho Prático 2')
-st.write('Introdução a Banco de Dados')
-st.write('Departamento de Ciência da Computação')
-st.write('Universidade Federal de Minas Gerais')
+st.header('Introdução a Banco de Dados')
+st.subheader('Departamento de Ciência da Computação')
+st.subheader('Universidade Federal de Minas Gerais')
 
-# Função para clonar o repositório Git e carregar os dados
-def clonar_e_carregar():
+# Função para verificar e atualizar o banco de dados a partir do repositório Git
+def verificar_e_atualizar_db():
     repo_path = './Data_IBD'
     repo_url = 'https://github.com/souza-marcos/Data_IBD.git'
+    db_file = os.path.join(repo_path, 'database.db')
 
-    # Clonar o repositório se ele ainda não existir
+    # Clonar ou puxar as atualizações do repositório se ele já existir
     if not os.path.exists(repo_path):
         git.Repo.clone_from(repo_url, repo_path)
+    else:
+        repo = git.Repo(repo_path)
+        origin = repo.remotes.origin
+        origin.pull()
 
-    # Carregar os dados
-    conn = sqlite3.connect('database.db')
-    cursor = conn.cursor()
+    # Carregar os dados se o arquivo do banco de dados não existir
+    if not os.path.exists(db_file):
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        with io.open(os.path.join(repo_path, 'dump.sql'), 'r', encoding='utf-8') as f:
+            dump = f.read()
+            cursor.executescript(dump)
+        conn.close()
 
-    # Carregamento do dump
-    with io.open(os.path.join(repo_path, 'dump.sql'), 'r', encoding='utf-8') as f:
-        dump = f.read()
-        cursor.executescript(dump)
-
-    conn.close()
-
-# Botão no Streamlit para clonar o repositório e carregar os dados
-if st.button('Clonar Repositório e Carregar Dados'):
-    clonar_e_carregar()
-    st.success('Repositório Clonado e Dados Carregados com Sucesso!')
-
+# Verificar e atualizar o banco de dados automaticamente
+verificar_e_atualizar_db()
 
 # Carrega e exibe o diagrama ER
 st.image('modeloer.png', caption='Diagrama ER', use_column_width=True)
 
 # Carrega e exibe o diagrama relacional
-st.image('relacional.jpeg', caption='Diagrama Relacional', use_column_width=True)
+st.image('relacional.png', caption='Diagrama Relacional', use_column_width=True)
 
 # Estabelece a conexão com o banco de dados
 conn = sqlite3.connect('database.db')
@@ -54,11 +54,11 @@ def consulta_refinarias_petrobras():
     '''
     return pd.read_sql_query(query, conn)
 
-def consulta_produtores_independentes():
+def empresas_ociosas():
     query = '''
-    SELECT EmpID, Nome
-    FROM Empresa
-    WHERE ProdutorIndependente = 1
+    SELECT CNPJ, Data
+    FROM Processamento
+    WHERE Volume = 0 and strftime('%Y', Data) >= '2023';
     '''
     return pd.read_sql_query(query, conn)
 
@@ -84,47 +84,25 @@ def consulta_variacao_capacidade():
     '''
     return pd.read_sql_query(query, conn)
 
-def consulta_producao_nafta_ano():
-    query = '''
-    SELECT
-        EmpID, Nome,
-        Ano,
-        ProducaoTotal
-    FROM (
-        SELECT
-            em.EmpID, em.Nome,
-            strftime('%Y', pr.Data) AS Ano,
-            SUM(pr.Quantidade) AS ProducaoTotal
-        FROM Producao pr
-        JOIN Empresa em ON pr.EmpID = em.EmpID
-        WHERE ProdID = 1
-        GROUP BY em.EmpID, Ano
-    ) AS ProducaoPorAno
-    JOIN (
-        SELECT
-            Ano AS MaxAno,
-            MAX(ProducaoTotal) AS MaxProducaoTotal
-        FROM (
-            SELECT
-                strftime('%Y', pr.Data) AS Ano,
-                SUM(pr.Quantidade) AS ProducaoTotal
-            FROM Producao pr
-            WHERE ProdID = 1
-            GROUP BY Ano
-        ) AS ProducaoPorAnoMax
-        GROUP BY Ano
-    ) AS MaxProducaoPorAno ON ProducaoPorAno.Ano = MaxProducaoPorAno.MaxAno
-        AND ProducaoPorAno.ProducaoTotal = MaxProducaoPorAno.MaxProducaoTotal
-    ORDER BY Ano;
-    '''
-    return pd.read_sql_query(query, conn)
-
 def consulta_empresas_por_estado():
     query = '''
     SELECT E.Estado, COUNT(EmpID) AS "Numero de Empresas"
     FROM Estado E NATURAL JOIN Empresa
     GROUP BY E.Estado
     ORDER BY "Numero de Empresas" DESC;
+    '''
+    return pd.read_sql_query(query, conn)
+
+def refinarias_maior_media():
+    query = '''
+    SELECT Instalacao, Data, Volume
+    FROM Refinaria NATURAL JOIN (SELECT CNPJ, Data, Volume
+								             FROM Processamento AS P1
+								             WHERE strftime('%Y', P1.Data) >= '2023' AND P1.Volume > (SELECT AVG(P2.Volume)
+                                                         								              FROM Processamento AS P2
+                                                         								              WHERE strftime('%Y', P2.Data) >= '2023'
+                                                         								              GROUP BY P2.CNPJ
+                                                        								              HAVING P1.CNPJ =  P2.CNPJ));
     '''
     return pd.read_sql_query(query, conn)
 
@@ -140,7 +118,8 @@ def consulta_producao_glp():
     JOIN Empresa em ON pr.EmpID = em.EmpID
     JOIN Estado e ON em.EstadoID = e.EstadoID
     WHERE p.Nome = 'GLP ' AND strftime('%Y', pr.Data) BETWEEN '2019' AND '2023'
-    GROUP BY p.Nome, e.Estado, p.Unidade;
+    GROUP BY p.Nome, e.Estado, p.Unidade
+    ORDER BY ProducaoTotal DESC;
     '''
     return pd.read_sql_query(query, conn)
 
@@ -170,14 +149,16 @@ def consulta_producao_por_empresa():
     '''
     return pd.read_sql_query(query, conn)
 
-def consulta_estados_refinarias():
+def maior_produtor():
     query = '''
-    SELECT e.Estado, COUNT(r.EmpID) AS NumeroDeRefinarias
-    FROM Refinaria r
-    JOIN Empresa em ON r.EmpID = em.EmpID
-    JOIN Estado e ON em.EstadoID = e.EstadoID
-    GROUP BY e.Estado
-    ORDER BY NumeroDeRefinarias DESC;
+    SELECT Nome AS NomeProduto, NomeEmpresa AS MaiorProdutor2023, Regiao
+    FROM (SELECT IDProd, EmpID, NomeEmpresa, MAX(QuantidadeProduzida2023), Regiao
+			FROM (SELECT ProdID AS IDProd, EmpID, Nome AS NomeEmpresa, SUM(Quantidade) AS QuantidadeProduzida2023, Regiao
+						FROM Producao NATURAL JOIN Empresa NATURAL JOIN Estado
+						WHERE strftime('%Y', Data) >= '2023'
+						GROUP BY ProdID, EmpID)
+			GROUP BY IDProd
+			ORDER BY IDProd) JOIN Produto ON IDProd = ProdID;
     '''
     return pd.read_sql_query(query, conn)
 
@@ -199,47 +180,49 @@ def consulta_refinarias_gasolina():
 st.title("Consultas SQL")
 
 # Botões para as consultas pré-definidas
-if st.button('Refinarias da Petrobras'):
+if st.button('Consulta 1: Refinarias da Petrobras'):
     df = consulta_refinarias_petrobras()
     st.write(df)
 
-if st.button('Produtores Independentes'):
-    df = consulta_produtores_independentes()
+if st.button('Consulta 2: Empresas ociosas'):
+    df = empresas_ociosas()
     st.write(df)
 
-# ... Continuação do código anterior ...
-
-if st.button('Variação da Capacidade Autorizada'):
+if st.button('Consulta 3: Variação da Capacidade Autorizada'):
     df = consulta_variacao_capacidade()
     st.write(df)
 
-if st.button('Produção de Nafta por Ano'):
-    df = consulta_producao_nafta_ano()
-    st.write(df)
-
-if st.button('Número de Empresas por Estado'):
+if st.button('Consulta 4: Número de Empresas por Estado'):
     df = consulta_empresas_por_estado()
     st.write(df)
+    st.image('consulta4.png', caption='Número de Empresas por Estado')
 
-if st.button('Produção de GLP por Estado (2019-2023)'):
+if st.button('Consulta 5: Meses em que refinarias processaram volume maior que a própria média anual (2023)'):
+    df = refinarias_maior_media()
+    st.write(df)
+
+if st.button('Consulta 6: Produção de GLP por Estado (2019-2023)'):
     df = consulta_producao_glp()
     st.write(df)
+    st.image('consulta6.png', caption='Produção de GLP por Estado (2019-2023)')
 
-if st.button('Produção de Gasolina A por Macrorregião'):
+if st.button('Consulta 7: Produção de Gasolina A por Macrorregião'):
     df = consulta_producao_gasolina_macrorregiao()
     st.write(df)
+    st.image('consulta7.png', caption='Produção de Gasolina A por Macrorregião')
 
-if st.button('Produção Total por Empresa'):
+if st.button('Consulta 8: Produção Total por Empresa'):
     df = consulta_producao_por_empresa()
     st.write(df)
 
-if st.button('Estados com Maior Número de Refinarias'):
-    df = consulta_estados_refinarias()
+if st.button('Consulta 9: Empresa que mais produziu cada tipo de produto em 2023'):
+    df = maior_produtor()
     st.write(df)
 
-if st.button('Refinarias com Maior Produção de Gasolina A'):
+if st.button('Consulta 10: Refinarias com Maior Produção de Gasolina A'):
     df = consulta_refinarias_gasolina()
     st.write(df)
+    st.image('consulta10.png', caption='Refinarias com Maior Produção de Gasolina A')
 
 # Campo de texto e botão para a consulta personalizada
 user_query = st.text_area("Digite sua consulta SQL aqui:")
